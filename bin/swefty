@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+# ========================================================
+# SWEFTY-OS // by Mouad (15yo hacker OS project)
+# Built for Radxa ROCK 2A (RK3528) & Raspberry Pi
+# ========================================================
+
+import os
+import sys
+import time
+import socket
+import platform
+import subprocess
+import shutil
+import random
+
+# Terminal colors (ANSI codes)
+RED     = "\033[91m"
+GREEN   = "\033[92m"
+YELLOW  = "\033[93m"
+CYAN    = "\033[96m"
+MAGENTA = "\033[95m"
+BOLD    = "\033[1m"
+DIM     = "\033[2m"
+RESET   = "\033[0m"
+
+# Cyberpunk ASCII Art
+BANNER = f"""{CYAN}{BOLD}
+   ___       __     ______ ________  __      ____  _____
+  / _ \\_____/ /__  / __/ // /_  __/__\\ \\    / __ \\/ ___/
+ / // / _  /  '_/ _\\ \\/ _  / / / /___/\\ \\  / /_/ /\\__ \\ 
+/____/\\_,_/_/\\_\\ /___/_//_/ /_/        \\_\\ \\____/____/ 
+{MAGENTA}   >> [ SWEFTY-OS v1.0 // ROCKCHIP RK3528 CYBERDECK ] <<{RESET}
+"""
+
+QUOTES = [
+    "hack the planet.",
+    "running on ARM64 Cortex-A53, feeling fast.",
+    "swefty-os booted in 3.2s. linux is elite.",
+    "who needs windows when you got a custom kernel?",
+    "shipped for hack club."
+]
+
+def clear():
+    # clean the screen
+    os.system("clear")
+
+def bar(percent, width=16):
+    """Draws a cool progress bar for memory and storage"""
+    filled = int(width * (percent / 100))
+    bar_str = "█" * filled + "░" * (width - filled)
+    
+    if percent > 85:
+        col = RED
+    elif percent > 50:
+        col = YELLOW
+    else:
+        col = GREEN
+    return f"{col}[{bar_str}] {percent:.0f}%{RESET}"
+
+def get_temp():
+    # read cpu temp on rockchip/linux
+    temp_path = "/sys/class/thermal/thermal_zone0/temp"
+    if os.path.exists(temp_path):
+        try:
+            with open(temp_path, "r") as f:
+                return f"{float(f.read().strip()) / 1000.0:.1f}°C"
+        except:
+            return "unknown"
+    return "38.5°C (Simulated)"
+
+def get_ram():
+    # parse /proc/meminfo like a real linux nerd
+    meminfo_path = "/proc/meminfo"
+    if os.path.exists(meminfo_path):
+        try:
+            data = {}
+            with open(meminfo_path) as f:
+                for line in f:
+                    parts = line.split(":")
+                    if len(parts) == 2:
+                        data[parts[0].strip()] = int(parts[1].split()[0])
+            total = data.get("MemTotal", 1) / 1024
+            free = data.get("MemAvailable", data.get("MemFree", 0)) / 1024
+            used = total - free
+            pct = (used / total) * 100
+            return used, total, pct
+        except:
+            pass
+    # fallback for testing on macbook
+    return 340, 1024, 33.2
+
+def get_disk():
+    # check disk space on root
+    try:
+        tot, used, free = shutil.disk_usage("/")
+        return used / (1024**3), tot / (1024**3), (used / tot) * 100
+    except:
+        return 2.1, 16.0, 13.0
+
+def get_ip():
+    # quick trick to find local LAN ip without bash net-tools
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except:
+        ip = "127.0.0.1 (Offline)"
+    finally:
+        s.close()
+    return ip
+
+def ping_test():
+    clear()
+    print(f"{CYAN}--- PINGING INTERNET (8.8.8.8) ---{RESET}\n")
+    # run 4 pings to test connectivity
+    param = "-c" if platform.system().lower() != "windows" else "-n"
+    subprocess.run(["ping", param, "4", "8.8.8.8"])
+    input(f"\n{YELLOW}Press Enter to go back...{RESET}")
+
+def show_dashboard():
+    clear()
+    print(BANNER)
+    print(f"{DIM}\"{random.choice(QUOTES)}\"{RESET}\n")
+
+    used_r, tot_r, pct_r = get_ram()
+    used_d, tot_d, pct_d = get_disk()
+    temp = get_temp()
+    ip = get_ip()
+
+    print(f"{BOLD}{WHITE}SYSTEM STATUS:{RESET}")
+    print(f"  {CYAN}▸ Hostname :{RESET} {platform.node()}")
+    print(f"  {CYAN}▸ OS/Kernel:{RESET} Linux {platform.release()} ({platform.machine()})")
+    print(f"  {CYAN}▸ SoC Temp :{RESET} {YELLOW}{temp}{RESET}")
+    print(f"  {CYAN}▸ Local IP :{RESET} {GREEN}{ip}{RESET}")
+    print(f"  {CYAN}▸ RAM      :{RESET} {bar(pct_r)} ({used_r:.0f}MB / {tot_r:.0f}MB)")
+    print(f"  {CYAN}▸ Storage  :{RESET} {bar(pct_d)} ({used_d:.1f}GB / {tot_d:.0f}GB)")
+
+    print(f"\n{BOLD}{WHITE}QUICK ACTIONS:{RESET}")
+    print(f"  {GREEN}[1]{RESET} Live Monitor (refreshing)")
+    print(f"  {GREEN}[2]{RESET} Ping Test (check internet)")
+    print(f"  {GREEN}[3]{RESET} View Board Specs (Rock 2A)")
+    print(f"  {GREEN}[4]{RESET} Open Nano Editor")
+    print(f"  {GREEN}[q]{RESET} Drop to normal Bash shell")
+
+def board_specs():
+    clear()
+    print(f"{MAGENTA}{BOLD}=== RADXA ROCK 2A HARDWARE SPECS ==={RESET}\n")
+    print("  • SoC       : Rockchip RK3528A")
+    print("  • Cores     : 4x ARM Cortex-A53 @ 2.0GHz")
+    print("  • GPU       : Mali-450 (Retro Gaming Capable)")
+    print("  • RAM       : LPDDR4 / LPDDR4X")
+    print("  • Storage   : MicroSD / eMMC")
+    print("  • Ports     : HDMI 2.0, Gigabit LAN, USB 3.0, USB 2.0, Type-C Power")
+    print("  • GPIO      : 40-pin header for hacking sensors and LEDs")
+    input(f"\n{YELLOW}Press Enter to go back...{RESET}")
+
+def main():
+    while True:
+        show_dashboard()
+        choice = input(f"\n{MAGENTA}swefty{RESET}@{CYAN}os{RESET}:~# ").strip().lower()
+
+        if choice == "1":
+            try:
+                while True:
+                    show_dashboard()
+                    print(f"\n{YELLOW}>> Press Ctrl+C to stop <<{RESET}")
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+        elif choice == "2":
+            ping_test()
+        elif choice == "3":
+            board_specs()
+        elif choice == "4":
+            os.system("nano")
+        elif choice in ["q", "exit", "quit"]:
+            print(f"\n{GREEN}Logged out of swefty dashboard. You're in bash! (type 'swefty' to reopen){RESET}\n")
+            break
+
+if __name__ == "__main__":
+    main()
