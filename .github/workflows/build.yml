@@ -1,0 +1,39 @@
+name: Build SWEFTY-OS Firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-firmware:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-user-static \
+            binfmt-support \
+            xz-utils \
+            curl \
+            kpartx \
+            parted
+
+      - name: Make Scripts Executable
+        run: |
+          chmod +x bin/swefty scripts/customize.sh build.sh
+
+      - name: Build SWEFTY-OS Image
+        run: |
+          sudo bash build.sh
+
+      - name: Upload Flashable Firmware Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: swefty-os-rock2a-v1.0.img.xz
+          path: output/*.img.xz
+          retention-days: 14

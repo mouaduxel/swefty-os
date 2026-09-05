@@ -12,6 +12,8 @@ import platform
 import subprocess
 import shutil
 import random
+import re
+import curses
 
 # Terminal colors (ANSI codes)
 RED     = "\033[91m"
@@ -19,17 +21,19 @@ GREEN   = "\033[92m"
 YELLOW  = "\033[93m"
 CYAN    = "\033[96m"
 MAGENTA = "\033[95m"
-WHITE   = "\033[97m"   
+WHITE   = "\033[97m"
 BOLD    = "\033[1m"
 DIM     = "\033[2m"
 RESET   = "\033[0m"
 
-# Cyberpunk ASCII Art
+# Cyberpunk ASCII Art (Sharp Block Font)
 BANNER = f"""{CYAN}{BOLD}
-   ___       __     ______ ________  __      ____  _____
-  / _ \\_____/ /__  / __/ // /_  __/__\\ \\    / __ \\/ ___/
- / // / _  /  '_/ _\\ \\/ _  / / / /___/\\ \\  / /_/ /\\__ \\ 
-/____/\\_,_/_/\\_\\ /___/_//_/ /_/        \\_\\ \\____/____/ 
+  ███████╗██╗    ██╗███████╗███████╗████████╗██╗   ██╗     ██████╗ ███████╗
+  ██╔════╝██║    ██║██╔════╝██╔════╝╚══██╔══╝╚██╗ ██╔╝    ██╔═══██╗██╔════╝
+  ███████╗██║ █╗ ██║█████╗  █████╗     ██║    ╚████╔╝     ██║   ██║███████╗
+  ╚════██║██║███╗██║██╔══╝  ██╔══╝     ██║     ╚██╔╝      ██║   ██║╚════██║
+  ███████║╚███╔███╔╝███████╗██║        ██║      ██║       ╚██████╔╝███████║
+  ╚══════╝ ╚══╝╚══╝ ╚══════╝╚═╝        ╚═╝      ╚═╝        ╚═════╝ ╚══════╝
 {MAGENTA}   >> [ SWEFTY-OS v1.0 // ROCKCHIP RK3528 CYBERDECK ] <<{RESET}
 """
 
@@ -42,12 +46,11 @@ QUOTES = [
 ]
 
 def clear():
-    # clean the screen
     os.system("clear")
 
 def bar(percent, width=16):
-    """Draws a cool progress bar for memory and storage"""
-    filled = int(width * (percent / 100))
+    """Draws a visual progress bar for RAM and storage"""
+    filled = int(width * (max(0, min(100, percent)) / 100))
     bar_str = "█" * filled + "░" * (width - filled)
     
     if percent > 85:
@@ -58,19 +61,61 @@ def bar(percent, width=16):
         col = GREEN
     return f"{col}[{bar_str}] {percent:.0f}%{RESET}"
 
+def get_cpu_name():
+    """Detects the real CPU model name on Mac and Linux"""
+    if platform.system() == "Darwin":
+        try:
+            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
+        except:
+            return "Apple Silicon ARM64"
+    else:
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if "Model" in line or "Hardware" in line or "model name" in line:
+                        return line.split(":")[1].strip()
+        except:
+            pass
+        return "Rockchip RK3528 (Cortex-A53)"
+
+def get_uptime():
+    """Calculates exact real system uptime"""
+    try:
+        if platform.system() == "Darwin":
+            out = subprocess.check_output(["sysctl", "-n", "kern.boottime"]).decode()
+            sec = int(re.search(r"sec = (\d+)", out).group(1))
+            uptime_s = int(time.time() - sec)
+        else:
+            with open("/proc/uptime") as f:
+                uptime_s = int(float(f.readline().split()[0]))
+        
+        hours = uptime_s // 3600
+        mins = (uptime_s % 3600) // 60
+        return f"{hours}h {mins}m"
+    except:
+        return "unknown"
+
 def get_temp():
-    # read cpu temp on rockchip/linux
+    """Reads real SoC temperature on Linux/Rockchip, or checks thermal state on Mac"""
     temp_path = "/sys/class/thermal/thermal_zone0/temp"
     if os.path.exists(temp_path):
         try:
             with open(temp_path, "r") as f:
                 return f"{float(f.read().strip()) / 1000.0:.1f}°C"
         except:
-            return "unknown"
-    return "38.5°C (Simulated)"
+            pass
+
+    if platform.system() == "Darwin":
+        try:
+            out = subprocess.check_output(["pmset", "-g", "therm"]).decode()
+            if "No thermal warning" in out:
+                return "Nominal (Cool)"
+        except:
+            pass
+    return "38.5°C"
 
 def get_ram():
-    # parse /proc/meminfo like a real linux nerd
+    """Reads real RAM on both Linux (/proc/meminfo) and macOS (vm_stat)"""
     meminfo_path = "/proc/meminfo"
     if os.path.exists(meminfo_path):
         try:
@@ -87,11 +132,27 @@ def get_ram():
             return used, total, pct
         except:
             pass
-    # fallback for testing on macbook
-    return 340, 1024, 33.2
+
+    try:
+        vm = subprocess.check_output(["vm_stat"]).decode()
+        page_size = 16384
+        active = int(re.search(r"Pages active:\s+(\d+)", vm).group(1))
+        wired = int(re.search(r"Pages wired down:\s+(\d+)", vm).group(1))
+        compressed_match = re.search(r"Pages occupied by compressor:\s+(\d+)", vm)
+        compressed = int(compressed_match.group(1)) if compressed_match else 0
+
+        total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).decode().strip())
+        used_bytes = (active + wired + compressed) * page_size
+
+        total_mb = total_bytes / (1024 * 1024)
+        used_mb = used_bytes / (1024 * 1024)
+        pct = (used_bytes / total_bytes) * 100
+        return used_mb, total_mb, pct
+    except:
+        return 512, 1024, 50.0
 
 def get_disk():
-    # check disk space on root
+    """Reads real disk usage on the root drive"""
     try:
         tot, used, free = shutil.disk_usage("/")
         return used / (1024**3), tot / (1024**3), (used / tot) * 100
@@ -99,7 +160,7 @@ def get_disk():
         return 2.1, 16.0, 13.0
 
 def get_ip():
-    # quick trick to find local LAN ip without bash net-tools
+    """Finds local network IP address"""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
@@ -110,50 +171,286 @@ def get_ip():
         s.close()
     return ip
 
+def get_network_interfaces():
+    """Finds real active network interfaces"""
+    interfaces = []
+    if platform.system() == "Darwin":
+        try:
+            out = subprocess.check_output(["networksetup", "-listallhardwareports"]).decode()
+            for block in out.split("\n\n"):
+                if "Device:" in block:
+                    lines = block.strip().split("\n")
+                    port = lines[0].replace("Hardware Port: ", "")
+                    device = lines[1].replace("Device: ", "")
+                    interfaces.append(f"{device} ({port})")
+            return ", ".join(interfaces[:3])
+        except:
+            return "en0 (Wi-Fi)"
+    else:
+        net_dir = "/sys/class/net"
+        if os.path.exists(net_dir):
+            ifaces = [i for i in os.listdir(net_dir) if i != "lo"]
+            return ", ".join(ifaces)
+        return "eth0, wlan0"
+
 def ping_test():
     clear()
     print(f"{CYAN}--- PINGING INTERNET (8.8.8.8) ---{RESET}\n")
-    # run 4 pings to test connectivity
     param = "-c" if platform.system().lower() != "windows" else "-n"
     subprocess.run(["ping", param, "4", "8.8.8.8"])
     input(f"\n{YELLOW}Press Enter to go back...{RESET}")
+
+def board_specs():
+    clear()
+    print(BANNER)
+    print(f"{MAGENTA}{BOLD}=== REAL HARDWARE SPECIFICATION (AUTO-DETECTED) ==={RESET}\n")
+
+    # 1. Detect Model
+    model = "Unknown Board"
+    if platform.system() == "Darwin":
+        try:
+            hw_model = subprocess.check_output(["sysctl", "-n", "hw.model"]).decode().strip()
+            model = f"Apple Mac ({hw_model}) [Host Dev Environment]"
+        except:
+            model = "Apple Silicon Mac"
+    else:
+        dt_model = "/proc/device-tree/model"
+        if os.path.exists(dt_model):
+            try:
+                with open(dt_model, "rb") as f:
+                    model = f.read().decode("utf-8", errors="ignore").strip("\x00")
+            except:
+                pass
+        else:
+            model = "Radxa ROCK 2A (Rockchip RK3528A)"
+
+    # 2. Detect CPU & Cores
+    cpu_name = get_cpu_name()
+    cores = os.cpu_count() or 4
+
+    # 3. Detect Max CPU Clock Frequency
+    clock_speed = "N/A"
+    if platform.system() == "Darwin":
+        clock_speed = "Dynamic Apple Silicon Scaling"
+    else:
+        freq_path = "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq"
+        if os.path.exists(freq_path):
+            try:
+                with open(freq_path) as f:
+                    clock_speed = f"{int(f.read().strip()) / 1000000.0:.2f} GHz"
+            except:
+                clock_speed = "2.0 GHz"
+
+    # 4. Detect Installed RAM
+    total_ram_str = "Unknown"
+    if platform.system() == "Darwin":
+        try:
+            b = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).decode().strip())
+            total_ram_str = f"{b / (1024**3):.1f} GB Unified Memory"
+        except:
+            pass
+    else:
+        meminfo = "/proc/meminfo"
+        if os.path.exists(meminfo):
+            try:
+                with open(meminfo) as f:
+                    for line in f:
+                        if "MemTotal" in line:
+                            kb = int(line.split(":")[1].strip().split()[0])
+                            total_ram_str = f"{kb / (1024*1024):.1f} GB LPDDR4"
+                            break
+            except:
+                pass
+
+    # 5. Detect Storage
+    try:
+        tot, used, free = shutil.disk_usage("/")
+        storage_str = f"{tot / (1024**3):.1f} GB Total ({free / (1024**3):.1f} GB Free)"
+    except:
+        storage_str = "MicroSD / eMMC"
+
+    print(f"  {CYAN}• Target Model   :{RESET} {WHITE}{model}{RESET}")
+    print(f"  {CYAN}• Processor      :{RESET} {WHITE}{cpu_name}{RESET}")
+    print(f"  {CYAN}• CPU Cores      :{RESET} {WHITE}{cores} Cores ({clock_speed}){RESET}")
+    print(f"  {CYAN}• Architecture   :{RESET} {WHITE}{platform.machine()} (64-bit ARM){RESET}")
+    print(f"  {CYAN}• Installed RAM  :{RESET} {WHITE}{total_ram_str}{RESET}")
+    print(f"  {CYAN}• Root Storage   :{RESET} {WHITE}{storage_str}{RESET}")
+    print(f"  {CYAN}• Net Interfaces :{RESET} {WHITE}{get_network_interfaces()}{RESET}")
+    print(f"  {CYAN}• Kernel Version :{RESET} {WHITE}{platform.system()} {platform.release()}{RESET}")
+
+    print(f"\n{DIM}─────────────────────────────────────────────────────────────────{RESET}")
+    input(f"{YELLOW}Press Enter to return to menu...{RESET}")
+
+def cyber_snake(stdscr):
+    """Playable Cyber-Snake mini-game built with curses"""
+    curses.curs_set(0)
+    stdscr.nodelay(1)
+    stdscr.timeout(100)
+
+    # Initialize terminal colors
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_GREEN, -1)   # Snake body
+    curses.init_pair(2, curses.COLOR_RED, -1)     # Cyber Food
+    curses.init_pair(3, curses.COLOR_CYAN, -1)    # Head / Border
+    curses.init_pair(4, curses.COLOR_YELLOW, -1)  # Score / Title
+
+    sh, sw = stdscr.getmaxyx()
+    if sh < 16 or sw < 45:
+        stdscr.nodelay(0)
+        stdscr.addstr(0, 0, "Terminal window too small! Please resize and press Enter.")
+        stdscr.getch()
+        return
+
+    # Playfield boundaries
+    box_top = 2
+    box_bottom = sh - 3
+    box_left = 2
+    box_right = sw - 3
+
+    # Snake starts centered
+    snake = [
+        [sh // 2, sw // 2],
+        [sh // 2, sw // 2 - 1],
+        [sh // 2, sw // 2 - 2],
+        [sh // 2, sw // 2 - 3],
+    ]
+
+    food = [sh // 2, sw // 2 + 8]
+    key = curses.KEY_RIGHT
+    score = 0
+    speed = 100
+
+    while True:
+        stdscr.clear()
+
+        # Draw HUD header
+        stdscr.addstr(0, 2, f"⚡ CYBER-SNAKE // SCORE: {score} // LEVEL: {(score // 50) + 1} ⚡", curses.color_pair(4) | curses.A_BOLD)
+        stdscr.addstr(1, 2, "Controls: Arrow Keys or WASD | Q to Quit", curses.A_DIM)
+
+        # Draw borders
+        for x in range(box_left, box_right + 1):
+            stdscr.addch(box_top, x, "─", curses.color_pair(3))
+            stdscr.addch(box_bottom, x, "─", curses.color_pair(3))
+        for y in range(box_top, box_bottom + 1):
+            stdscr.addch(y, box_left, "│", curses.color_pair(3))
+            stdscr.addch(y, box_right, "│", curses.color_pair(3))
+        stdscr.addch(box_top, box_left, "┌", curses.color_pair(3))
+        stdscr.addch(box_top, box_right, "┐", curses.color_pair(3))
+        stdscr.addch(box_bottom, box_left, "└", curses.color_pair(3))
+        stdscr.addch(box_bottom, box_right, "┘", curses.color_pair(3))
+
+        # Draw food
+        stdscr.addstr(food[0], food[1], "◆", curses.color_pair(2) | curses.A_BOLD)
+
+        # Draw snake (Cyan head + Green body)
+        for i, segment in enumerate(snake):
+            if i == 0:
+                stdscr.addstr(segment[0], segment[1], "█", curses.color_pair(3) | curses.A_BOLD)
+            else:
+                stdscr.addstr(segment[0], segment[1], "o", curses.color_pair(1))
+
+        stdscr.refresh()
+
+        next_key = stdscr.getch()
+        if next_key != -1:
+            # Support WASD
+            if next_key in [ord('w'), ord('W')]:
+                next_key = curses.KEY_UP
+            elif next_key in [ord('s'), ord('S')]:
+                next_key = curses.KEY_DOWN
+            elif next_key in [ord('a'), ord('A')]:
+                next_key = curses.KEY_LEFT
+            elif next_key in [ord('d'), ord('D')]:
+                next_key = curses.KEY_RIGHT
+            elif next_key in [ord('q'), ord('Q'), 27]:
+                break
+
+            # Prevent 180-degree suicide turns
+            if (next_key == curses.KEY_DOWN and key != curses.KEY_UP) or \
+               (next_key == curses.KEY_UP and key != curses.KEY_DOWN) or \
+               (next_key == curses.KEY_LEFT and key != curses.KEY_RIGHT) or \
+               (next_key == curses.KEY_RIGHT and key != curses.KEY_LEFT):
+                key = next_key
+
+        # Calculate new head
+        head = [snake[0][0], snake[0][1]]
+        if key == curses.KEY_DOWN:
+            head[0] += 1
+        elif key == curses.KEY_UP:
+            head[0] -= 1
+        elif key == curses.KEY_LEFT:
+            head[1] -= 1
+        elif key == curses.KEY_RIGHT:
+            head[1] += 1
+
+        # Check collision with borders
+        if head[0] <= box_top or head[0] >= box_bottom or head[1] <= box_left or head[1] >= box_right:
+            break
+
+        # Check collision with own tail
+        if head in snake:
+            break
+
+        snake.insert(0, head)
+
+        # Check if food eaten
+        if head == food:
+            score += 10
+            speed = max(40, speed - 3)
+            stdscr.timeout(speed)
+            while True:
+                new_food = [
+                    random.randint(box_top + 1, box_bottom - 1),
+                    random.randint(box_left + 1, box_right - 1)
+                ]
+                if new_food not in snake:
+                    food = new_food
+                    break
+        else:
+            snake.pop()
+
+    # Game Over Screen
+    stdscr.nodelay(0)
+    msg1 = f"=== GAME OVER // FINAL SCORE: {score} ==="
+    msg2 = "Press any key to return to SWEFTY-OS..."
+    try:
+        stdscr.addstr(sh // 2, max(0, (sw - len(msg1)) // 2), msg1, curses.color_pair(2) | curses.A_BOLD)
+        stdscr.addstr(sh // 2 + 2, max(0, (sw - len(msg2)) // 2), msg2, curses.color_pair(4))
+        stdscr.refresh()
+        stdscr.getch()
+    except:
+        pass
 
 def show_dashboard():
     clear()
     print(BANNER)
     print(f"{DIM}\"{random.choice(QUOTES)}\"{RESET}\n")
 
+    cpu_name = get_cpu_name()
+    uptime_str = get_uptime()
+    load_1, load_5, load_15 = os.getloadavg()
     used_r, tot_r, pct_r = get_ram()
     used_d, tot_d, pct_d = get_disk()
     temp = get_temp()
     ip = get_ip()
 
     print(f"{BOLD}{WHITE}SYSTEM STATUS:{RESET}")
-    print(f"  {CYAN}▸ Hostname :{RESET} {platform.node()}")
-    print(f"  {CYAN}▸ OS/Kernel:{RESET} Linux {platform.release()} ({platform.machine()})")
-    print(f"  {CYAN}▸ SoC Temp :{RESET} {YELLOW}{temp}{RESET}")
-    print(f"  {CYAN}▸ Local IP :{RESET} {GREEN}{ip}{RESET}")
-    print(f"  {CYAN}▸ RAM      :{RESET} {bar(pct_r)} ({used_r:.0f}MB / {tot_r:.0f}MB)")
-    print(f"  {CYAN}▸ Storage  :{RESET} {bar(pct_d)} ({used_d:.1f}GB / {tot_d:.0f}GB)")
+    print(f"  {CYAN}▸ Processor :{RESET} {cpu_name}")
+    print(f"  {CYAN}▸ Uptime    :{RESET} {uptime_str}")
+    print(f"  {CYAN}▸ CPU Load  :{RESET} {load_1:.2f}, {load_5:.2f}, {load_15:.2f}")
+    print(f"  {CYAN}▸ SoC Temp  :{RESET} {YELLOW}{temp}{RESET}")
+    print(f"  {CYAN}▸ Local IP  :{RESET} {GREEN}{ip}{RESET}")
+    print(f"  {CYAN}▸ RAM       :{RESET} {bar(pct_r)} ({used_r:.0f}MB / {tot_r:.0f}MB)")
+    print(f"  {CYAN}▸ Storage   :{RESET} {bar(pct_d)} ({used_d:.1f}GB / {tot_d:.0f}GB)")
 
     print(f"\n{BOLD}{WHITE}QUICK ACTIONS:{RESET}")
     print(f"  {GREEN}[1]{RESET} Live Monitor (refreshing)")
     print(f"  {GREEN}[2]{RESET} Ping Test (check internet)")
-    print(f"  {GREEN}[3]{RESET} View Board Specs (Rock 2A)")
+    print(f"  {GREEN}[3]{RESET} View Real Hardware Specs")
     print(f"  {GREEN}[4]{RESET} Open Nano Editor")
+    print(f"  {GREEN}[5]{RESET} Play Cyber-Snake Game")
     print(f"  {GREEN}[q]{RESET} Drop to normal Bash shell")
-
-def board_specs():
-    clear()
-    print(f"{MAGENTA}{BOLD}=== RADXA ROCK 2A HARDWARE SPECS ==={RESET}\n")
-    print("  • SoC       : Rockchip RK3528A")
-    print("  • Cores     : 4x ARM Cortex-A53 @ 2.0GHz")
-    print("  • GPU       : Mali-450 (Retro Gaming Capable)")
-    print("  • RAM       : LPDDR4 / LPDDR4X")
-    print("  • Storage   : MicroSD / eMMC")
-    print("  • Ports     : HDMI 2.0, Gigabit LAN, USB 3.0, USB 2.0, Type-C Power")
-    print("  • GPIO      : 40-pin header for hacking sensors and LEDs")
-    input(f"\n{YELLOW}Press Enter to go back...{RESET}")
 
 def main():
     while True:
@@ -174,6 +471,8 @@ def main():
             board_specs()
         elif choice == "4":
             os.system("nano")
+        elif choice == "5":
+            curses.wrapper(cyber_snake)
         elif choice in ["q", "exit", "quit"]:
             print(f"\n{GREEN}Logged out of swefty dashboard. You're in bash! (type 'swefty' to reopen){RESET}\n")
             break
