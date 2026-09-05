@@ -444,13 +444,48 @@ def show_dashboard():
     print(f"  {CYAN}▸ RAM       :{RESET} {bar(pct_r)} ({used_r:.0f}MB / {tot_r:.0f}MB)")
     print(f"  {CYAN}▸ Storage   :{RESET} {bar(pct_d)} ({used_d:.1f}GB / {tot_d:.0f}GB)")
 
-    print(f"\n{BOLD}{WHITE}QUICK ACTIONS:{RESET}")
-    print(f"  {GREEN}[1]{RESET} Live Monitor (refreshing)")
-    print(f"  {GREEN}[2]{RESET} Ping Test (check internet)")
+    print(f"\n{BOLD}{WHITE}CYBERDECK CONTROL CENTER:{RESET}")
+    print(f"  {GREEN}[1]{RESET} Live Telemetry Monitor (auto-refresh)")
+    print(f"  {GREEN}[2]{RESET} Ping Test & Network Check")
     print(f"  {GREEN}[3]{RESET} View Real Hardware Specs")
-    print(f"  {GREEN}[4]{RESET} Open Nano Editor")
+    print(f"  {GREEN}[4]{RESET} Open Code Editor (Nano)")
     print(f"  {GREEN}[5]{RESET} Play Cyber-Snake Game")
-    print(f"  {GREEN}[q]{RESET} Drop to normal Bash shell")
+    print(f"  {GREEN}[6]{RESET} Connect to Wi-Fi / Network")
+    print(f"  {GREEN}[7]{RESET} Open Full Bash Terminal")
+    print(f"  {GREEN}[8]{RESET} Reboot / Power Off System")
+    print(f"  {GREEN}[q]{RESET} Exit to Bash Prompt")
+
+def wifi_setup():
+    clear()
+    print(f"{CYAN}{BOLD}--- SWEFTY-OS NETWORK & WI-FI MANAGER ---{RESET}\n")
+    if shutil.which("nmtui"):
+        os.system("sudo nmtui")
+    elif shutil.which("nmcli"):
+        print(f"{GREEN}[*] Scanning available Wi-Fi networks...{RESET}\n")
+        os.system("nmcli device wifi list")
+        ssid = input(f"\n{CYAN}Enter Wi-Fi SSID to connect (or press Enter to cancel): {RESET}").strip()
+        if ssid:
+            pwd = input(f"{CYAN}Enter Wi-Fi Password: {RESET}").strip()
+            os.system(f"nmcli device wifi connect '{ssid}' password '{pwd}'")
+        input(f"\n{YELLOW}Press Enter to return...{RESET}")
+    else:
+        print(f"{YELLOW}NetworkManager not active in this session.{RESET}")
+        input(f"\n{YELLOW}Press Enter to return...{RESET}")
+
+def power_menu():
+    clear()
+    print(BANNER)
+    print(f"{RED}{BOLD}=== SYSTEM POWER CONTROL ==={RESET}\n")
+    print(f"  {GREEN}[1]{RESET} Reboot System (Radxa ROCK 2A)")
+    print(f"  {GREEN}[2]{RESET} Shutdown / Power Off")
+    print(f"  {GREEN}[b]{RESET} Return to Dashboard\n")
+    p_choice = input(f"{MAGENTA}swefty{RESET}::{RED}power{RESET}> ").strip().lower()
+    if p_choice == "1":
+        print(f"\n{YELLOW}Rebooting SWEFTY-OS...{RESET}")
+        os.system("sudo reboot")
+    elif p_choice == "2":
+        print(f"\n{YELLOW}Shutting down SWEFTY-OS...{RESET}")
+        os.system("sudo poweroff")
 
 def main():
     while True:
@@ -473,8 +508,16 @@ def main():
             os.system("nano")
         elif choice == "5":
             curses.wrapper(cyber_snake)
+        elif choice == "6":
+            wifi_setup()
+        elif choice == "7":
+            clear()
+            print(f"{GREEN}Entering Bash Shell. Type 'exit' to return to SWEFTY-OS.{RESET}\n")
+            os.system("/bin/bash")
+        elif choice == "8":
+            power_menu()
         elif choice in ["q", "exit", "quit"]:
-            print(f"\n{GREEN}Logged out of swefty dashboard. You're in bash! (type 'swefty' to reopen){RESET}\n")
+            print(f"\n{GREEN}Dropped to bash. Type 'swefty' anytime to return!{RESET}\n")
             break
 
 if __name__ == "__main__":

@@ -28,6 +28,8 @@ if ! id "swefty" &>/dev/null; then
     useradd -m -s /bin/bash -G sudo,video,audio swefty || true
     echo "swefty:swefty" | chpasswd || true
     echo "root:swefty" | chpasswd || true
+    echo "swefty ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/swefty
+    chmod 0440 /etc/sudoers.d/swefty
 fi
 
 # 4. Install our custom swefty Cyberdeck command
