@@ -12,16 +12,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+          df -h
+
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            qemu-user-static \
-            binfmt-support \
-            xz-utils \
-            curl \
-            kpartx \
-            parted
+          sudo apt-get install -y             qemu-user-static             binfmt-support             xz-utils             curl             kpartx             parted
 
       - name: Make Scripts Executable
         run: |
@@ -29,7 +28,7 @@ jobs:
 
       - name: Build SWEFTY-OS Image
         run: |
-          sudo bash build.sh
+          sudo bash -x build.sh
 
       - name: Upload Flashable Firmware Image
         uses: actions/upload-artifact@v4
