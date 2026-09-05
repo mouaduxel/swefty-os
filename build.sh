@@ -90,9 +90,6 @@ mkdir -p "${MOUNT_DIR}/usr/local/bin" "${MOUNT_DIR}/tmp"
 cp "${WORK_DIR}/bin/swefty" "${MOUNT_DIR}/usr/local/bin/swefty"
 cp "${WORK_DIR}/bin/swefty" "${MOUNT_DIR}/tmp/swefty"
 chmod +x "${MOUNT_DIR}/usr/local/bin/swefty"
-if [ -f "${WORK_DIR}/bin/swefty-issue-gen" ]; then
-    cp "${WORK_DIR}/bin/swefty-issue-gen" "${MOUNT_DIR}/usr/local/bin/swefty-issue-gen"
-    chmod +x "${MOUNT_DIR}/usr/local/bin/swefty-issue-gen"
 fi
 
 # Copy customize script

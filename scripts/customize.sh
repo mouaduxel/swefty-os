@@ -43,7 +43,6 @@ fi
 echo "[*] Enabling system services..."
 systemctl enable ssh 2>/dev/null || true
 systemctl enable NetworkManager 2>/dev/null || true
-systemctl enable swefty-issue.service 2>/dev/null || true
 
 # 6. Clean up package cache to keep image small
 echo "[*] Cleaning up package cache..."
